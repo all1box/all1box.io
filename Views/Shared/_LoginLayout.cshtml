@@ -23,6 +23,39 @@
     <link href="/assets/css/theme.min.css" type="text/css" rel="stylesheet" id="style_default" />
     <link href="/assets/css/user-rtl.min.css" type="text/css" rel="stylesheet" id="user_style_rtl" />
     <link href="/assets/css/user.min.css" type="text/css" rel="stylesheet" id="user_style_default" />
+    <style>
+        .btn-priclaudia {
+            --phoenix-btn-color: #fff;
+            --phoenix-btn-bg: #2f6fed;
+            --phoenix-btn-border-color: #2f6fed;
+            --phoenix-btn-hover-color: #fff;
+            --phoenix-btn-hover-bg: #265ecb;
+            --phoenix-btn-hover-border-color: #265ecb;
+            --phoenix-btn-focus-shadow-rgb: 47, 111, 237;
+            --phoenix-btn-active-color: #fff;
+            --phoenix-btn-active-bg: #214fa9;
+            --phoenix-btn-active-border-color: #214fa9;
+            --phoenix-btn-disabled-color: #fff;
+            --phoenix-btn-disabled-bg: #8fb0f7;
+            --phoenix-btn-disabled-border-color: #8fb0f7;
+            color: var(--phoenix-btn-color);
+            background-color: var(--phoenix-btn-bg);
+            border-color: var(--phoenix-btn-border-color);
+        }
+
+        .btn-priclaudia:hover,
+        .btn-priclaudia:focus {
+            color: var(--phoenix-btn-hover-color);
+            background-color: var(--phoenix-btn-hover-bg);
+            border-color: var(--phoenix-btn-hover-border-color);
+        }
+
+        .btn-priclaudia:disabled {
+            color: var(--phoenix-btn-disabled-color);
+            background-color: var(--phoenix-btn-disabled-bg);
+            border-color: var(--phoenix-btn-disabled-border-color);
+        }
+    </style>
 
     <script>
         var phoenixIsRTL = window.config.config.phoenixIsRTL;
