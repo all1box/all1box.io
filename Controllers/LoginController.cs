@@ -4,6 +4,9 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
+using Twilio;
+using Twilio.Rest.Api.V2010.Account;
+using Twilio.Types;
 
 namespace all1box.io.Controllers;
 
@@ -132,9 +135,13 @@ public sealed class LoginController : Controller
             }
             else
             {
-                _logger.LogInformation("Phone login requested for {MaskedPhone}; SMS delivery is not configured in this project.", MaskPhone(cellPhone ?? login));
-                ViewBag.Error = "Phone verification is not configured yet. Please sign in with your email.";
-                return View();
+                if (string.IsNullOrWhiteSpace(cellPhone))
+                {
+                    ViewBag.Error = "We found your account, but no phone number is configured for SMS verification.";
+                    return View();
+                }
+
+                SendVerificationSms(cellPhone, code);
             }
 
             return RedirectToAction("Verify", new { id = guid });
@@ -313,6 +320,48 @@ public sealed class LoginController : Controller
 
         var email = await command.ExecuteScalarAsync(cancellationToken) as string;
         return string.IsNullOrWhiteSpace(email) ? "" : MaskEmail(email);
+    }
+
+    private void SendVerificationSms(string cellPhone, string code)
+    {
+        var accountSid = _configuration["Twilio:AccountSid"];
+        var authToken = _configuration["Twilio:AuthToken"];
+        var messagingServiceSid = _configuration["Twilio:MessagingServiceSid"];
+        var fromNumber = _configuration["Twilio:FromNumber"];
+
+        if (string.IsNullOrWhiteSpace(accountSid)
+            || string.IsNullOrWhiteSpace(authToken)
+            || string.IsNullOrWhiteSpace(fromNumber)
+            || accountSid.StartsWith("YOUR_", StringComparison.OrdinalIgnoreCase)
+            || authToken.StartsWith("YOUR_", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Twilio SMS verification is not configured.");
+        }
+
+        var twilioPhone = new string(cellPhone.Where(char.IsDigit).ToArray());
+        if (!twilioPhone.StartsWith("1", StringComparison.Ordinal) && twilioPhone.Length == 10)
+        {
+            twilioPhone = "1" + twilioPhone;
+        }
+
+        twilioPhone = "+" + twilioPhone;
+
+        TwilioClient.Init(accountSid, authToken);
+        if (!string.IsNullOrWhiteSpace(messagingServiceSid) && !messagingServiceSid.StartsWith("YOUR_", StringComparison.OrdinalIgnoreCase))
+        {
+            MessageResource.Create(
+                body: $"Your all1box verification code is {code}",
+                from: new PhoneNumber(fromNumber),
+                messagingServiceSid: messagingServiceSid,
+                to: new PhoneNumber(twilioPhone));
+        }
+        else
+        {
+            MessageResource.Create(
+                body: $"Your all1box verification code is {code}",
+                from: new PhoneNumber(fromNumber),
+                to: new PhoneNumber(twilioPhone));
+        }
     }
 
     private static DateTimeOffset GetNextSessionMidnightUtc()
