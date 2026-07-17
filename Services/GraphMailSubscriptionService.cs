@@ -67,6 +67,11 @@ public sealed class GraphMailSubscriptionService : BackgroundService
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(_subscriptionId) && await TryUseExistingSubscriptionAsync(cancellationToken))
+        {
+            return;
+        }
+
         if (!string.IsNullOrWhiteSpace(_subscriptionId))
         {
             try
@@ -82,6 +87,51 @@ public sealed class GraphMailSubscriptionService : BackgroundService
         }
 
         await CreateSubscriptionAsync(cancellationToken);
+    }
+
+    private async Task<bool> TryUseExistingSubscriptionAsync(CancellationToken cancellationToken)
+    {
+        using var request = await _tokenService.CreateGraphRequestAsync(HttpMethod.Get, "https://graph.microsoft.com/v1.0/subscriptions", cancellationToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("Could not list Microsoft Graph subscriptions: {StatusCode} {ResponseBody}", (int)response.StatusCode, responseBody);
+            return false;
+        }
+
+        var subscriptions = JsonSerializer.Deserialize<GraphSubscriptionListResponse>(responseBody, JsonOptions)?.Value ?? [];
+        var expectedResource = $"/users/{_options.MailboxAddress}/mailFolders('Inbox')/messages";
+        var matchingSubscriptions = subscriptions
+            .Where(subscription =>
+                string.Equals(subscription.NotificationUrl, _options.NotificationUrl, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(subscription.Resource, expectedResource, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(subscription.ChangeType, "created", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(subscription => subscription.ExpirationDateTime)
+            .ToList();
+
+        var current = matchingSubscriptions.FirstOrDefault();
+        if (current is null)
+        {
+            return false;
+        }
+
+        _subscriptionId = current.Id;
+        _expiresAt = current.ExpirationDateTime;
+        _logger.LogInformation("Using existing Microsoft Graph mail subscription {SubscriptionId}; expires at {ExpiresAt}.", _subscriptionId, _expiresAt);
+
+        foreach (var duplicate in matchingSubscriptions.Skip(1))
+        {
+            await DeleteSubscriptionAsync(duplicate.Id, cancellationToken);
+        }
+
+        if (_expiresAt <= DateTimeOffset.UtcNow.AddHours(24))
+        {
+            await RenewSubscriptionAsync(cancellationToken);
+        }
+
+        return true;
     }
 
     private async Task CreateSubscriptionAsync(CancellationToken cancellationToken)
@@ -136,6 +186,20 @@ public sealed class GraphMailSubscriptionService : BackgroundService
         _logger.LogInformation("Renewed Microsoft Graph mail subscription {SubscriptionId}; expires at {ExpiresAt}.", _subscriptionId, _expiresAt);
     }
 
+    private async Task DeleteSubscriptionAsync(string subscriptionId, CancellationToken cancellationToken)
+    {
+        using var request = await _tokenService.CreateGraphRequestAsync(HttpMethod.Delete, $"https://graph.microsoft.com/v1.0/subscriptions/{subscriptionId}", cancellationToken);
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (response.IsSuccessStatusCode)
+        {
+            _logger.LogInformation("Deleted duplicate Microsoft Graph mail subscription {SubscriptionId}.", subscriptionId);
+            return;
+        }
+
+        var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        _logger.LogWarning("Could not delete duplicate Microsoft Graph subscription {SubscriptionId}: {StatusCode} {ResponseBody}", subscriptionId, (int)response.StatusCode, responseBody);
+    }
+
     private bool IsConfigured()
     {
         return !string.IsNullOrWhiteSpace(_options.TenantId)
@@ -172,6 +236,14 @@ public sealed class GraphMailSubscriptionService : BackgroundService
     private sealed class GraphSubscriptionResponse
     {
         public string Id { get; set; } = "";
+        public string ChangeType { get; set; } = "";
+        public string NotificationUrl { get; set; } = "";
+        public string Resource { get; set; } = "";
         public DateTimeOffset ExpirationDateTime { get; set; }
+    }
+
+    private sealed class GraphSubscriptionListResponse
+    {
+        public List<GraphSubscriptionResponse> Value { get; set; } = [];
     }
 }

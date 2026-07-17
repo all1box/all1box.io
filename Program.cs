@@ -6,6 +6,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllersWithViews();
 builder.Services.Configure<MicrosoftGraphOptions>(builder.Configuration.GetSection("MicrosoftGraph"));
+builder.Services.AddSingleton<GraphWebhookCallRepository>();
 builder.Services.AddHttpClient<MicrosoftGraphTokenService>();
 builder.Services.AddHttpClient<GraphMailSubscriptionService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<GraphMailSubscriptionService>());
