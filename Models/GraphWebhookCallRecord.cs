@@ -3,6 +3,7 @@ namespace all1box.io.Models;
 public sealed class GraphWebhookCallRecord
 {
     public DateTimeOffset ReceivedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTime ReceivedAtPacific { get; set; } = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, PacificTimeZone).DateTime;
     public string Method { get; set; } = "";
     public string Path { get; set; } = "";
     public string QueryString { get; set; } = "";
@@ -15,4 +16,18 @@ public sealed class GraphWebhookCallRecord
     public string? ResourceDataId { get; set; }
     public bool? ClientStateValid { get; set; }
     public string? Payload { get; set; }
+
+    private static readonly TimeZoneInfo PacificTimeZone = GetPacificTimeZone();
+
+    private static TimeZoneInfo GetPacificTimeZone()
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("Pacific Standard Time");
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+        }
+    }
 }

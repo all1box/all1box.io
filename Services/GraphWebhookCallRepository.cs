@@ -35,6 +35,7 @@ public sealed class GraphWebhookCallRepository
             INSERT INTO dbo.GraphWebhookCalls
             (
                 ReceivedAtUtc,
+                ReceivedAtPacific,
                 Method,
                 Path,
                 QueryString,
@@ -51,6 +52,7 @@ public sealed class GraphWebhookCallRepository
             VALUES
             (
                 @ReceivedAtUtc,
+                @ReceivedAtPacific,
                 @Method,
                 @Path,
                 @QueryString,
@@ -68,6 +70,7 @@ public sealed class GraphWebhookCallRepository
 
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.AddWithValue("@ReceivedAtUtc", record.ReceivedAtUtc.UtcDateTime);
+        command.Parameters.AddWithValue("@ReceivedAtPacific", record.ReceivedAtPacific);
         command.Parameters.AddWithValue("@Method", record.Method);
         command.Parameters.AddWithValue("@Path", record.Path);
         command.Parameters.AddWithValue("@QueryString", record.QueryString);
@@ -109,6 +112,7 @@ public sealed class GraphWebhookCallRepository
                     (
                         Id BIGINT IDENTITY(1,1) NOT NULL CONSTRAINT PK_GraphWebhookCalls PRIMARY KEY,
                         ReceivedAtUtc DATETIME2(7) NOT NULL CONSTRAINT DF_GraphWebhookCalls_ReceivedAtUtc DEFAULT SYSUTCDATETIME(),
+                        ReceivedAtPacific DATETIME2(7) NOT NULL CONSTRAINT DF_GraphWebhookCalls_ReceivedAtPacific DEFAULT CONVERT(DATETIME2(7), SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'Pacific Standard Time'),
                         Method NVARCHAR(16) NOT NULL,
                         Path NVARCHAR(512) NOT NULL,
                         QueryString NVARCHAR(2048) NOT NULL,
@@ -128,6 +132,39 @@ public sealed class GraphWebhookCallRepository
 
                     CREATE INDEX IX_GraphWebhookCalls_SubscriptionId
                         ON dbo.GraphWebhookCalls(SubscriptionId, ReceivedAtUtc DESC);
+                END;
+
+                IF COL_LENGTH(N'dbo.GraphWebhookCalls', N'ReceivedAtPacific') IS NULL
+                BEGIN
+                    ALTER TABLE dbo.GraphWebhookCalls
+                        ADD ReceivedAtPacific DATETIME2(7) NULL;
+                END;
+
+                EXEC sp_executesql N'
+                    UPDATE dbo.GraphWebhookCalls
+                        SET ReceivedAtPacific = CONVERT(DATETIME2(7), ReceivedAtUtc AT TIME ZONE ''UTC'' AT TIME ZONE ''Pacific Standard Time'')
+                        WHERE ReceivedAtPacific IS NULL;
+                ';
+
+                IF EXISTS (
+                    SELECT 1
+                    FROM sys.columns
+                    WHERE object_id = OBJECT_ID(N'dbo.GraphWebhookCalls')
+                        AND name = N'ReceivedAtPacific'
+                        AND is_nullable = 1
+                )
+                BEGIN
+                    ALTER TABLE dbo.GraphWebhookCalls
+                        ALTER COLUMN ReceivedAtPacific DATETIME2(7) NOT NULL;
+                END;
+
+                IF OBJECT_ID(N'DF_GraphWebhookCalls_ReceivedAtPacific', N'D') IS NULL
+                BEGIN
+                    ALTER TABLE dbo.GraphWebhookCalls
+                        ADD
+                            CONSTRAINT DF_GraphWebhookCalls_ReceivedAtPacific
+                            DEFAULT CONVERT(DATETIME2(7), SYSUTCDATETIME() AT TIME ZONE 'UTC' AT TIME ZONE 'Pacific Standard Time')
+                            FOR ReceivedAtPacific;
                 END;
                 """;
 
