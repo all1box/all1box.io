@@ -1,7 +1,14 @@
+using all1box.io.Models;
+using all1box.io.Services;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
+builder.Services.Configure<MicrosoftGraphOptions>(builder.Configuration.GetSection("MicrosoftGraph"));
+builder.Services.AddHttpClient<MicrosoftGraphTokenService>();
+builder.Services.AddHttpClient<GraphMailSubscriptionService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<GraphMailSubscriptionService>());
 
 var app = builder.Build();
 
