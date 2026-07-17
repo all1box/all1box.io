@@ -1,14 +1,24 @@
 using all1box.io.Models;
 using all1box.io.Services;
+using Microsoft.AspNetCore.Authentication.Cookies;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
+builder.Services
+    .AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/Login";
+        options.LogoutPath = "/Login/Logout";
+        options.AccessDeniedPath = "/Login";
+    });
 builder.Services.Configure<MicrosoftGraphOptions>(builder.Configuration.GetSection("MicrosoftGraph"));
 builder.Services.AddSingleton<GraphWebhookCallRepository>();
 builder.Services.AddHttpClient<MicrosoftGraphTokenService>();
+builder.Services.AddHttpClient<GraphLoginCodeSender>();
 builder.Services.AddHttpClient<GraphMailSubscriptionService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<GraphMailSubscriptionService>());
 
@@ -27,6 +37,7 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllerRoute(

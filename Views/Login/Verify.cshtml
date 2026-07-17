@@ -1,0 +1,117 @@
+@{
+    ViewData["Title"] = "Verify Code";
+    Layout = "_LoginLayout";
+}
+
+<main class="main" id="top">
+    <div class="container">
+        <div class="row flex-center min-vh-100 py-5">
+            <div class="col-sm-10 col-md-8 col-lg-5 col-xxl-4">
+                <div class="px-xxl-5">
+                    <div class="text-center mb-6">
+                        <h4 class="text-body-highlight">Enter the verification code</h4>
+                        <p class="text-body-tertiary mb-5">
+                            A 6-digit all1box verification code was sent to <strong>@ViewBag.MaskedDestination</strong>.
+                        </p>
+
+                        <div class="verification-form">
+                            <form method="post" asp-controller="Login" asp-action="Verify" asp-route-id="@ViewBag.Guid" id="verifyForm">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="id" value="@ViewBag.Guid" />
+                                <input type="hidden" name="code" id="codeValue" />
+
+                                <div class="d-flex align-items-center gap-2 mb-3 justify-content-center">
+                                    <input type="text" class="form-control px-2 text-center code-input"
+                                           maxlength="1" data-index="0" autofocus
+                                           inputmode="numeric" autocomplete="one-time-code" />
+                                    <input type="text" class="form-control px-2 text-center code-input"
+                                           maxlength="1" data-index="1"
+                                           inputmode="numeric" />
+                                    <input type="text" class="form-control px-2 text-center code-input"
+                                           maxlength="1" data-index="2"
+                                           inputmode="numeric" />
+                                    <span class="text-body-tertiary">-</span>
+                                    <input type="text" class="form-control px-2 text-center code-input"
+                                           maxlength="1" data-index="3"
+                                           inputmode="numeric" />
+                                    <input type="text" class="form-control px-2 text-center code-input"
+                                           maxlength="1" data-index="4"
+                                           inputmode="numeric" />
+                                    <input type="text" class="form-control px-2 text-center code-input"
+                                           maxlength="1" data-index="5"
+                                           inputmode="numeric" />
+                                </div>
+
+                                <button type="submit" class="btn btn-priclaudia w-100 mb-5" id="verifyBtn" disabled>Verify</button>
+                            </form>
+
+                            @if (ViewBag.Error != null)
+                            {
+                                <p class="text-danger mb-0">@ViewBag.Error</p>
+                            }
+
+                            <a class="fs-9" asp-controller="Login" asp-action="Index">Back to Sign In</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+@section Scripts {
+    <script>
+        const inputs = document.querySelectorAll('.code-input');
+        const codeField = document.getElementById('codeValue');
+        const verifyBtn = document.getElementById('verifyBtn');
+        const verifyForm = document.getElementById('verifyForm');
+        let submitted = false;
+
+        function updateCode() {
+            const code = Array.from(inputs).map(i => i.value).join('');
+            codeField.value = code;
+            verifyBtn.disabled = code.length < 6;
+
+            if (code.length === 6 && !submitted) {
+                submitted = true;
+                verifyBtn.disabled = true;
+                verifyBtn.textContent = 'Verifying...';
+                if (typeof verifyForm.requestSubmit === 'function') {
+                    verifyForm.requestSubmit();
+                } else {
+                    verifyForm.submit();
+                }
+            }
+        }
+
+        inputs.forEach((input, i) => {
+            input.addEventListener('input', (e) => {
+                e.target.value = e.target.value.replace(/\D/g, '');
+                if (e.target.value.length === 1 && i < inputs.length - 1) {
+                    inputs[i + 1].focus();
+                }
+                updateCode();
+            });
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && !e.target.value && i > 0) {
+                    inputs[i - 1].focus();
+                }
+            });
+
+            input.addEventListener('paste', (e) => {
+                e.preventDefault();
+                const pasted = (e.clipboardData || window.clipboardData).getData('text').trim().replace(/\D/g, '');
+                if (pasted.length >= 6) {
+                    for (let j = 0; j < 6; j++) {
+                        inputs[j].value = pasted[j];
+                    }
+                    inputs[5].focus();
+                    updateCode();
+                }
+            });
+        });
+
+        verifyForm.addEventListener('submit', () => updateCode());
+    </script>
+}
