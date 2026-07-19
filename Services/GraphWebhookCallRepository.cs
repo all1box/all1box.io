@@ -19,11 +19,15 @@ public sealed class GraphWebhookCallRepository
 
     public async Task InsertAsync(GraphWebhookCallRecord record, CancellationToken cancellationToken)
     {
-        var connectionString = _configuration.GetConnectionString("WebOSConn");
+        var connectionString = _configuration.GetConnectionString("BPDConn");
         if (string.IsNullOrWhiteSpace(connectionString) || connectionString.Contains("YOUR_", StringComparison.OrdinalIgnoreCase))
         {
-            _logger.LogWarning("Skipping webhook call persistence because ConnectionStrings:WebOSConn is not configured.");
-            return;
+            connectionString = _configuration.GetConnectionString("WebOSConn");
+            if (string.IsNullOrWhiteSpace(connectionString) || connectionString.Contains("YOUR_", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Skipping webhook call persistence because neither ConnectionStrings:BPDConn nor ConnectionStrings:WebOSConn is configured.");
+                return;
+            }
         }
 
         await EnsureSchemaAsync(connectionString, cancellationToken);
