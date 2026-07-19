@@ -324,21 +324,76 @@ public sealed class LoginController : Controller
             return true;
         }
 
-        var remoteIp = HttpContext.Connection.RemoteIpAddress;
-        if (remoteIp is null)
-        {
-            return false;
-        }
-
-        if (remoteIp.IsIPv4MappedToIPv6)
-        {
-            remoteIp = remoteIp.MapToIPv4();
-        }
-
         var allowedIps = _configuration.GetSection("DevBypass:AllowedIPs").Get<string[]>() ?? [];
-        return allowedIps.Any(ip =>
-            IPAddress.TryParse(ip, out var allowedIp)
-            && (allowedIp.IsIPv4MappedToIPv6 ? allowedIp.MapToIPv4() : allowedIp).Equals(remoteIp));
+        var parsedAllowedIps = allowedIps
+            .Select(ip => IPAddress.TryParse(ip, out var allowedIp) ? NormalizeIp(allowedIp) : null)
+            .Where(ip => ip is not null)
+            .ToArray();
+
+        var requestIps = GetRequestIpCandidates().ToArray();
+        var allowed = requestIps.Any(requestIp => parsedAllowedIps.Any(allowedIp => allowedIp!.Equals(requestIp)));
+
+        if (!allowed)
+        {
+            _logger.LogWarning(
+                "Login bypass denied. Request IP candidates: {RequestIps}. Allowed IPs: {AllowedIps}.",
+                string.Join(", ", requestIps.Select(ip => ip.ToString())),
+                string.Join(", ", parsedAllowedIps.Select(ip => ip!.ToString())));
+        }
+
+        return allowed;
+    }
+
+    private IEnumerable<IPAddress> GetRequestIpCandidates()
+    {
+        var remoteIp = HttpContext.Connection.RemoteIpAddress;
+        if (remoteIp is not null)
+        {
+            remoteIp = NormalizeIp(remoteIp);
+            yield return remoteIp;
+        }
+
+        if (remoteIp is null || !IsPrivateOrLoopbackIp(remoteIp))
+        {
+            yield break;
+        }
+
+        foreach (var headerName in new[] { "CF-Connecting-IP", "X-Real-IP", "X-Forwarded-For" })
+        {
+            if (!Request.Headers.TryGetValue(headerName, out var headerValues))
+            {
+                continue;
+            }
+
+            foreach (var rawValue in headerValues.SelectMany(value => value?.Split(',') ?? []))
+            {
+                var value = rawValue.Trim();
+                if (IPAddress.TryParse(value, out var parsedIp))
+                {
+                    yield return NormalizeIp(parsedIp);
+                }
+            }
+        }
+    }
+
+    private static IPAddress NormalizeIp(IPAddress ip)
+    {
+        return ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4() : ip;
+    }
+
+    private static bool IsPrivateOrLoopbackIp(IPAddress ip)
+    {
+        ip = NormalizeIp(ip);
+        if (IPAddress.IsLoopback(ip))
+        {
+            return true;
+        }
+
+        var bytes = ip.GetAddressBytes();
+        return ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+            && (bytes[0] == 10
+                || bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31
+                || bytes[0] == 192 && bytes[1] == 168);
     }
 
     private static async Task<string> GetMaskedDestinationAsync(SqlConnection connection, string guid, CancellationToken cancellationToken)
