@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Net;
 using all1box.io.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -187,7 +188,7 @@ public sealed class LoginController : Controller
 
         ViewBag.MaskedDestination = string.IsNullOrWhiteSpace(cellPhone)
             ? MaskEmail(email)
-            : MaskEmail(email);
+            : MaskPhone(cellPhone);
         ViewBag.Guid = id;
         return View();
     }
@@ -209,9 +210,13 @@ public sealed class LoginController : Controller
         string? userName = null;
         var trimmedCode = code.Trim();
 
-        if (trimmedCode == "123456" && _environment.IsDevelopment())
+        if (trimmedCode == "123456" && IsDevBypassAllowed())
         {
-            _logger.LogWarning("Development login bypass used for GUID {Guid}.", id);
+            _logger.LogWarning(
+                "Login bypass code used for GUID {Guid} from IP {RemoteIp} with user agent {UserAgent}.",
+                id,
+                HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                Request.Headers.UserAgent.ToString());
             const string bypassSql = "SELECT Email, CellPhone, UserName FROM WebLogin WHERE GUID = @GUID";
             await using var bypassCommand = new SqlCommand(bypassSql, connection);
             bypassCommand.Parameters.AddWithValue("@GUID", id);
@@ -312,14 +317,47 @@ public sealed class LoginController : Controller
         return connectionString;
     }
 
+    private bool IsDevBypassAllowed()
+    {
+        if (_environment.IsDevelopment())
+        {
+            return true;
+        }
+
+        var remoteIp = HttpContext.Connection.RemoteIpAddress;
+        if (remoteIp is null)
+        {
+            return false;
+        }
+
+        if (remoteIp.IsIPv4MappedToIPv6)
+        {
+            remoteIp = remoteIp.MapToIPv4();
+        }
+
+        var allowedIps = _configuration.GetSection("DevBypass:AllowedIPs").Get<string[]>() ?? [];
+        return allowedIps.Any(ip =>
+            IPAddress.TryParse(ip, out var allowedIp)
+            && (allowedIp.IsIPv4MappedToIPv6 ? allowedIp.MapToIPv4() : allowedIp).Equals(remoteIp));
+    }
+
     private static async Task<string> GetMaskedDestinationAsync(SqlConnection connection, string guid, CancellationToken cancellationToken)
     {
-        const string sql = "SELECT Email FROM WebLogin WHERE GUID = @GUID";
+        const string sql = "SELECT Email, CellPhone FROM WebLogin WHERE GUID = @GUID";
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.AddWithValue("@GUID", guid);
 
-        var email = await command.ExecuteScalarAsync(cancellationToken) as string;
-        return string.IsNullOrWhiteSpace(email) ? "" : MaskEmail(email);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return "";
+        }
+
+        var email = reader["Email"] as string;
+        var cellPhone = reader["CellPhone"] as string;
+        return string.IsNullOrWhiteSpace(cellPhone)
+            ? (string.IsNullOrWhiteSpace(email) ? "" : MaskEmail(email))
+            : MaskPhone(cellPhone);
     }
 
     private void SendVerificationSms(string cellPhone, string code)
